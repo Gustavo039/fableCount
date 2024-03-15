@@ -6,7 +6,8 @@ library(rlang)
 
 ingarch_tscall = function(x, p = 0, q = 0,
                           automatic = T, trace = T,
-                          ic, link, distr){
+                          ic, link, distr, xreg = NULL){
+  params = c(p,q)
   if(automatic){
     # search_matrix storage a INGARCH(p,q) model in a matrix[p,q]
     search_matrix = matrix(ncol = 3, nrow = 3)
@@ -17,7 +18,7 @@ ingarch_tscall = function(x, p = 0, q = 0,
                      {tscount::tsglm(x,
                                     model = list(past_obs = 0:i,
                                                  past_mean = 0:j),
-                                    link = link, distr = distr)},
+                                    link = link, distr = distr , xreg = xreg)},
                   error = function(err){
                     return(NA)
                   })
@@ -29,22 +30,25 @@ ingarch_tscall = function(x, p = 0, q = 0,
     }
     params = which(search_matrix == min(search_matrix), arr.ind = TRUE)
     params = params - 1
-    tscount_model = tscount::tsglm(x,
-                                   model =
-                                     list(past_obs = params[1],
-                                          past_mean = params[2]),
-                                   link = link,distr = distr
-                                   )
   }
-  else{
-    tscount_model = tscount::tsglm(x,
-                                   model =
-                                     list(past_obs = p$p,
-                                          past_mean = p$q),
-                                   link = link, distr = distr
-    )
-    params = c(p$p,p$q)
-  }
+  # else{
+  #   print(p)
+  #   tscount_model = tscount::tsglm(x,
+  #                                  model =
+  #                                    list(past_obs = p,
+  #                                         past_mean = q),
+  #                                  link = link, distr = distr
+  #   )
+  #   params = c(p,q)
+  # }
+  tscount_model = tscount::tsglm(x,
+                                 model =
+                                   list(past_obs = params[1],
+                                        past_mean = params[2]),
+                                 link = link,
+                                 distr = distr,
+                                 xreg = xreg[[1]]$xreg
+                                 )
   return(list(params = params, tscount_model = tscount_model))
 }
 
@@ -78,12 +82,7 @@ specials_INGARCH = new_specials(
   pq = function(p = 'not choosen', q = 'not choosen',
                  p_init = 2, q_init = 2,
                  fixed = list()) {
-    # if (self$stage %in% c("estimate", "refit")) {
-    #   p <- p[p <= floor(NROW(self$data) / 3)]
-    #   q <- q[q <= floor(NROW(self$data) / 3)]
-    # }
-    # p_init <- p[which.min(abs(p - p_init))]
-    # q_init <- q[which.min(abs(q - q_init))]
+
     if(!all(grepl("^(ma|ar)\\d+", names(fixed)))){
       abort("The 'fixed' coefficients for pq() must begin with ar or ma, followed by a lag number.")
     }
@@ -91,29 +90,29 @@ specials_INGARCH = new_specials(
   },
   common_xregs,
   xreg = function(..., fixed = list()) {
-    dots <- enexprs(...)
-    env <- map(enquos(...), get_env)
-    env[map_lgl(env, compose(is_empty, env_parents))] <- NULL
-    env <- if (!is_empty(env)) get_env(env[[1]]) else base_env()
+    dots = enexprs(...)
+    env = map(enquos(...), get_env)
+    env[map_lgl(env, compose(is_empty, env_parents))] = NULL
+    env = if (!is_empty(env)) get_env(env[[1]]) else base_env()
 
-    constants <- map_lgl(dots, inherits, "numeric")
-    constant_forced <- any(map_lgl(dots[constants], `%in%`, 1))
+    constants = map_lgl(dots, inherits, "numeric")
+    constant_forced = any(map_lgl(dots[constants], `%in%`, 1))
 
-    model_formula <- new_formula(
+    model_formula = new_formula(
       lhs = NULL,
       rhs = reduce(dots, function(.x, .y) call2("+", .x, .y))
     )
 
     # Mask user defined lag to retain history when forecasting
-    env <- env_bury(env, lag = lag)
+    env = env_bury(env, lag = lag)
 
-    xreg <- model.frame(model_formula, data = env, na.action = stats::na.pass)
-    tm <- terms(xreg)
-    constant <- as.logical(tm %@% "intercept")
-    xreg <- model.matrix(tm, xreg)
+    xreg = model.frame(model_formula, data = env, na.action = stats::na.pass)
+    tm = terms(xreg)
+    constant = as.logical(tm %@% "intercept")
+    xreg = model.matrix(tm, xreg)
 
     if (constant) {
-      xreg <- xreg[, -1, drop = FALSE]
+      xreg = xreg[, -1, drop = FALSE]
     }
 
     list(
@@ -129,26 +128,23 @@ specials_INGARCH = new_specials(
 train_INGARCH = function(.data, specials, ic,
                          link, distr,
                          trace, ...){
-  # Extract a vector of response data
   mv = tsibble::measured_vars(.data)
   if(length(mv) > 1) stop("INGARCH is a univariate model.")
   y = .data[[mv]]
 
-  # Pull out inputs from the specials
-  if(length(specials$season) > 1) stop("The `season()` special of `SMEAN()` should only be used once.")
-  m = specials$season[[1]]
-
   automatic = F
   if(specials$pq[[1]]$p |>
      is.character()) automatic = T
+  xreg = specials$xreg
   tsglm_model = ingarch_tscall(x = y,
                                ic = ic,
-                               p = specials$pq[[1]],
-                               q = specials$pq[[1]],
+                               p = specials$pq[[1]]$p,
+                               q = specials$pq[[1]]$q,
                                link = link,
                                distr = distr,
                                automatic = automatic,
-                               trace = trace)
+                               trace = trace,
+                               xreg = xreg)
 
   # Compute fitted values and residuals
   fit = tsglm_model$tscount_model |> fitted()
@@ -173,7 +169,9 @@ train_INGARCH = function(.data, specials, ic,
 }
 
 model_sum.INGARCH = function(x){
-  sprintf("INGARCH(%i, %i)", x$coef[1],x$coef[2])
+  if(is.na(x$tsmodel$xreg[1])) out = sprintf("INGARCH(%i, %i)", x$coef[1],x$coef[2])
+  else out = sprintf("INGARCH(%i, %i) w/ covariates", x$coef[1],x$coef[2])
+  out
 }
 
 report.INGARCH = function(x){
@@ -210,20 +208,22 @@ residuals.INGARCH = function(object, ...){
 
 #################
 
-teste_tscount = tscount::tsglm(tscount::campy, model = list(past_obs = 5, past_mean = 1:10),
+covari = tsibbledata::aus_production$Gas |>
+  as.matrix()
+colnames(covari) = 'Gas'
+teste_tscount = tscount::tsglm(tsibbledata::aus_production$Beer, model = list(past_obs = 5, past_mean = 1:2),
                                link = 'identity',
-                               distr = 'poisson')
+                               distr = 'poisson',
+                               xreg = covari)
 
 teste_me = ingarch_tscall(tsibbledata::aus_production$Beer, ic = 'QIC', distr = 'poisson', link = 'identity')
 
 
-teste_ingarch = tsibbledata::aus_production |>
-  model(ing = INGARCH(Beer, ic = 'BIC', link = 'identity', distr = 'poisson', trace = T, automatic = T),
-        ar = ARIMA(Beer ~ pdq(1,0,0) + PDQ(0,0,0)))
+
 
 tsibbledata::aus_production |>
   model(ing = INGARCH(Beer ~ pq(0,2), link = 'identity', distr = 'poisson'),
         ing_automatic = INGARCH(Beer, ic = 'BIC', link = 'identity', distr = 'poisson', trace = T))
 
 tsibbledata::aus_production |>
-  model(ing_automatic = INGARCH(Beer, ic = 'BIC', link = 'identity', distr = 'poisson', trace = T))
+  model(ing_automatic = INGARCH(Beer ~ Gas + Electricity + pq(0,1), ic = 'AIC', link = 'identity', distr = 'poisson', trace = T))

@@ -2,7 +2,18 @@ Package: fableCount
 Type: Package
 Title: Count Models(INGARCH and GLARMA) For Tidyverts Packages
 Version: 0.1.0
-Author: Who wrote it
+Authors: 
+    c(person(given = "Gustavo",
+             family = "Almeida Silva",
+             email = "gustavoalmeidasilva@ice.ufjf.br",
+             role = c("aut", "cre"), 
+             comment = c(ORCID = "0009-0005-7266-5866")),
+      person(given = "Marcel",
+             family = "Vieira",
+             role = "aut"),
+      person(given = "Earo",
+             family = "Wang",
+             role = "aut"))
 Maintainer: The package maintainer <yourself@somewhere.net>
 Description: More about what it does (maybe more than one line)
     Use four spaces when indenting paragraphs within the Description.

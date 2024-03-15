@@ -36,6 +36,15 @@ ingarch_tscall = function(x, p = 0, q = 0,
                                    link = link,distr = distr
                                    )
   }
+  else{
+    tscount_model = tscount::tsglm(x,
+                                   model =
+                                     list(past_obs = p$p,
+                                          past_mean = p$q),
+                                   link = link, distr = distr
+    )
+    params = c(p$p,p$q)
+  }
   return(list(params = params, tscount_model = tscount_model))
 }
 
@@ -43,7 +52,6 @@ INGARCH = function(formula,
                     ic = c('AIC', 'BIC', 'QIC'),
                     link = c('identity', 'log'),
                     distr = c('poisson', 'nbinom'),
-                    automatic = T,
                     trace = F) {
 
   ic = match.arg(ic)
@@ -63,20 +71,19 @@ INGARCH = function(formula,
                        ic = ic,
                        link = link,
                        distr = distr,
-                       automatic = automatic,
                        trace = trace)
 }
 
 specials_INGARCH = new_specials(
-  pq = function(p = 0:5, q = 0:5,
+  pq = function(p = 'not choosen', q = 'not choosen',
                  p_init = 2, q_init = 2,
                  fixed = list()) {
-    if (self$stage %in% c("estimate", "refit")) {
-      p <- p[p <= floor(NROW(self$data) / 3)]
-      q <- q[q <= floor(NROW(self$data) / 3)]
-    }
-    p_init <- p[which.min(abs(p - p_init))]
-    q_init <- q[which.min(abs(q - q_init))]
+    # if (self$stage %in% c("estimate", "refit")) {
+    #   p <- p[p <= floor(NROW(self$data) / 3)]
+    #   q <- q[q <= floor(NROW(self$data) / 3)]
+    # }
+    # p_init <- p[which.min(abs(p - p_init))]
+    # q_init <- q[which.min(abs(q - q_init))]
     if(!all(grepl("^(ma|ar)\\d+", names(fixed)))){
       abort("The 'fixed' coefficients for pq() must begin with ar or ma, followed by a lag number.")
     }
@@ -120,7 +127,7 @@ specials_INGARCH = new_specials(
 )
 
 train_INGARCH = function(.data, specials, ic,
-                         link, distr, automatic,
+                         link, distr,
                          trace, ...){
   # Extract a vector of response data
   mv = tsibble::measured_vars(.data)
@@ -131,8 +138,13 @@ train_INGARCH = function(.data, specials, ic,
   if(length(specials$season) > 1) stop("The `season()` special of `SMEAN()` should only be used once.")
   m = specials$season[[1]]
 
+  automatic = F
+  if(specials$pq[[1]]$p |>
+     is.character()) automatic = T
   tsglm_model = ingarch_tscall(x = y,
                                ic = ic,
+                               p = specials$pq[[1]],
+                               q = specials$pq[[1]],
                                link = link,
                                distr = distr,
                                automatic = automatic,
@@ -210,4 +222,8 @@ teste_ingarch = tsibbledata::aus_production |>
         ar = ARIMA(Beer ~ pdq(1,0,0) + PDQ(0,0,0)))
 
 tsibbledata::aus_production |>
-  model(ing = INGARCH(Beer ~ pq(1,1), ic = 'BIC', link = 'identity', distr = 'poisson', trace = T, automatic = T))
+  model(ing = INGARCH(Beer ~ pq(0,2), link = 'identity', distr = 'poisson'),
+        ing_automatic = INGARCH(Beer, ic = 'BIC', link = 'identity', distr = 'poisson', trace = T))
+
+tsibbledata::aus_production |>
+  model(ing_automatic = INGARCH(Beer, ic = 'BIC', link = 'identity', distr = 'poisson', trace = T))

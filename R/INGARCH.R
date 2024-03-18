@@ -6,19 +6,23 @@ library(rlang)
 
 ingarch_tscall = function(x, p = 0, q = 0,
                           automatic = T, trace = T,
-                          ic, link, distr, xreg = NULL){
+                          ic  = 'AIC', link = 'identity', distr = 'poisson', xreg = NULL){
   params = c(p,q)
   if(automatic){
     # search_matrix storage a INGARCH(p,q) model in a matrix[p,q]
-    search_matrix = matrix(ncol = 3, nrow = 3)
-    for(i in 0:2){
-      for(j in 0:2){
+    search_matrix = matrix(ncol = 4, nrow = 4)
+    for(i in 0:3){
+      for(j in 0:3){
+        if(i == 0) past_obs_auto = NULL
+          else past_obs_auto = 1:i
+        if(j == 0) past_mean_auto = NULL
+          else past_mean_auto = 1:j
         step_model =
           tryCatch(expr =
                      {tscount::tsglm(x,
-                                    model = list(past_obs = 0:i,
-                                                 past_mean = 0:j),
-                                    link = link, distr = distr , xreg = xreg)},
+                                    model = list(past_obs = past_obs_auto,
+                                                 past_mean = past_mean_auto),
+                                    link = link, distr = distr , xreg = xreg[[1]]$xreg)},
                   error = function(err){
                     return(NA)
                   })
@@ -41,10 +45,14 @@ ingarch_tscall = function(x, p = 0, q = 0,
   #   )
   #   params = c(p,q)
   # }
+  if(params[1] == 0) past_obs = NULL
+    else past_obs = 1:params[1]
+  if(params[2] == 0) past_mean = NULL
+    else past_mean = 1:params[2]
   tscount_model = tscount::tsglm(x,
                                  model =
-                                   list(past_obs = params[1],
-                                        past_mean = params[2]),
+                                   list(past_obs = past_obs,
+                                        past_mean = past_mean),
                                  link = link,
                                  distr = distr,
                                  xreg = xreg[[1]]$xreg
@@ -206,17 +214,34 @@ residuals.INGARCH = function(object, ...){
   object$residuals
 }
 
+glance.INGARCH = function(x, ...){
+  tibble::tibble(sigma2 = x$sigma2,
+                 log_lik = x$tsmodel$logLik,
+                 AIC = x$tsmodel |> AIC(),
+                 BIC = x$tsmodel |> BIC(),
+                 )
+}
+
+
+forecast.INGARCH = function(object, new_data,...){
+  h = NROW(new_data)
+  values = predict(object = object$tsmodel,
+          n.ahead = h)
+  print(values)
+  distributional::dist_degenerate(values$pred)
+}
+
 #################
 
 covari = tsibbledata::aus_production$Gas |>
   as.matrix()
 colnames(covari) = 'Gas'
-teste_tscount = tscount::tsglm(tsibbledata::aus_production$Beer, model = list(past_obs = 5, past_mean = 1:2),
+teste_tscount = tscount::tsglm(tsibbledata::aus_production$Beer, model = list(past_obs = NULL, past_mean = NULL),
                                link = 'identity',
                                distr = 'poisson',
                                xreg = covari)
 
-teste_me = ingarch_tscall(tsibbledata::aus_production$Beer, ic = 'QIC', distr = 'poisson', link = 'identity')
+teste_me = ingarch_tscall(tsibbledata::aus_production$Beer, ic = 'AIC', distr = 'poisson', link = 'identity')
 
 
 
@@ -225,5 +250,9 @@ tsibbledata::aus_production |>
   model(ing = INGARCH(Beer ~ pq(0,2), link = 'identity', distr = 'poisson'),
         ing_automatic = INGARCH(Beer, ic = 'BIC', link = 'identity', distr = 'poisson', trace = T))
 
+teste_fab = tsibbledata::aus_production |>
+  model(ing_automatic = INGARCH(Beer ~  pq(1,1), ic = 'AIC', link = 'identity', distr = 'poisson', trace = T))
+
 tsibbledata::aus_production |>
-  model(ing_automatic = INGARCH(Beer ~ Gas + Electricity + pq(0,1), ic = 'AIC', link = 'identity', distr = 'poisson', trace = T))
+  model(ar = ARIMA(Beer)) |>
+  augment()

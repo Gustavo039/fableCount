@@ -1,8 +1,10 @@
 Package: fableCount
 Type: Package
-Title: Count Models(INGARCH and GLARMA) For Tidyverts Packages
-Version: 0.1.0
-Authors: 
+Title: Count Models(INGARCH and GLARMA) For Count Time Series for the Tidyverts's Packages
+Description: Provides the INGARCH model from the tscount package and the GLARMA model from the glarma package 
+  for Tidyverts users, also offers algorithms for automatic parameter selection for both models
+Version: 1.0.0
+Authors@R: 
     c(person(given = "Gustavo",
              family = "Almeida Silva",
              email = "gustavoalmeidasilva@ice.ufjf.br",
@@ -10,13 +12,41 @@ Authors:
              comment = c(ORCID = "0009-0005-7266-5866")),
       person(given = "Marcel",
              family = "Vieira",
-             role = "aut"),
-      person(given = "Earo",
-             family = "Wang",
-             role = "aut"))
+             role = "aut",
+             email = "marcel.vieira@ufjf.br",
+             comment = c(ORCID = "0000-0002-0456-380X")),
+      person(given = "Conselho Nacional de Desenvolvimento Científico e Tecnológico - CNPQ"
+             role = "fnd"),
+      person(given = "JF Salvando Todos - Plataforma de Análises Estatísticas"
+             role = c("fnd", "cph")
+             )
+            )
+Depends:
+    R (>= 3.4.0),
+    fabletools (>= 0.3.0)
+    tscount (>= 1.4.3)
+    glarma (>=1.6.0)
+    
+Imports:
+    Rcpp (>= 0.11.0),
+    rlang (>= 0.4.6),
+    stats,
+    dplyr (>= 1.0.0),
+    tsibble (>= 0.9.0),
+    tibble,
+    tidyr,
+    utils,
+    distributional
+Suggests:
+    covr,
+    feasts,
+    forecast,
+    knitr,
+    rmarkdown,
+    spelling,
+    testthat,
+    tsibbledata (>= 0.2.0)             
 Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
 License: What license is it under?
 Encoding: UTF-8
 LazyData: true

@@ -258,3 +258,6 @@ tsibbledata::aus_production |>
   select(ar) |>
   forecast(h = 2) |> hilo()
 
+tsibbledata::aus_production |>
+  model(ar = ARIMA(Beer ~ pdq(1,0,1))) |> report()
+

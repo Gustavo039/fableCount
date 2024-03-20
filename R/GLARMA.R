@@ -194,11 +194,58 @@ report.GLARMA = function(x){
 }
 
 
+
+split_tibble <- function(input_tibble) {
+  # Calculate the number of rows needed
+  num_rows <- nrow(input_tibble) %/% 4
+
+  # Initialize an empty list to store rows
+  rows <- list()
+
+  # Loop through each row and extract the data for 4 columns
+  for (i in 1:num_rows) {
+    start_row <- (i - 1) * 4 + 1
+    end_row <- min(i * 4, nrow(input_tibble))
+    rows[[i]] <- input_tibble[start_row:end_row, 1]
+  }
+
+  # Pad rows with NA values if necessary to ensure consistent column lengths
+  max_length <- max(sapply(rows, length))
+  rows <- sapply(rows, function(row) c(row, rep(NA, max_length - length(row))))
+
+  # Create a tibble from the list of rows
+  result_tibble <- as_tibble(do.call(cbind, rows))
+
+  return(result_tibble)
+}
+
 report.GLARMA = function(x){
+  if(x$distr == 'Poi')
+    distr_x = 'Poisson'
+  else distr_x = 'Negative Binomial'
+  sum_model = x$gl_model |> summary()
+  sum_model[14 : 14 + (x$gl_model$pq)] |>
+    unlist() |>
+    tibble::as_tibble() |>
+    mutate(stat =
+             rep(c('estim', 'std', 'z.ratio', 'p.value'), 2),
+           term = c(rep('intercept', 4), rep('ar', x$params[1] * 4) ,rep('theta', 4))
+    ) |>
+    pivot_wider(names_from = 'stat', values_from = 'value')
+
+
   cat('\n')
-  cat(sprintf("%s GLARMA(%i, %i)", x$distr, x$coef[1], x$coef[3]))
+  cat(sprintf("%s GLARMA(%i, %i)", distr_x, x$coef[1], x$coef[3]))
   cat('\n')
-  cat(print(x$gl_model$delta))
+
+  teste_sum[14:15] |>
+    unlist() |>
+    tibble::as_tibble() |>
+    mutate(stat =
+             rep(c('estim', 'std', 'z.ratio', 'p.value'), 2),
+           term = c(rep('intercept', 4), rep('thete', 4))
+    ) |>
+    pivot_wider(names_from = 'stat', values_from = 'value')
 }
 
 tidy.GLARMA = function(x){
@@ -259,7 +306,8 @@ teste_fab = tsibbledata::aus_production |>
                                 distr = 'Poi',
                                 method = 'FS',
                                 residuals = 'Pearson',
-                                trace = T))
+                                trace = T),
+        ar = ARIMA(Beer ~ pdq(1,0,1)))
 
-teste_fab |> select(ing_automatic) |> forecast(h = 11) |> autoplot(tsibbledata::aus_production |>
-                                                                     mutate(Beer = (Beer/20) |> ceiling()))
+teste_fab |> select(ing_automatic) |> report()
+

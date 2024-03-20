@@ -228,7 +228,7 @@ forecast.INGARCH = function(object, new_data,...){
   values = predict(object = object$tsmodel,
           n.ahead = h)
   print(values)
-  distributional::dist_degenerate(values$pred)
+  distributional::dist_poisson(values$pred)
 }
 
 #################
@@ -254,5 +254,7 @@ teste_fab = tsibbledata::aus_production |>
   model(ing_automatic = INGARCH(Beer ~  pq(1,1), ic = 'AIC', link = 'identity', distr = 'poisson', trace = T))
 
 tsibbledata::aus_production |>
-  model(ar = ARIMA(Beer)) |>
-  augment()
+  model(ar = INGARCH(Beer ~ pq(1,1), distr = 'nbinom')) |>
+  select(ar) |>
+  forecast(h = 2) |> hilo()
+

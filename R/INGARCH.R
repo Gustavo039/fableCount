@@ -4,6 +4,8 @@ library(tscount)
 library(tidyverse)
 library(rlang)
 
+
+
 ingarch_tscall = function(x, p = 0, q = 0,
                           automatic = T, trace = T,
                           ic  = 'AIC', link = 'identity', distr = 'poisson', xreg = NULL){
@@ -35,16 +37,6 @@ ingarch_tscall = function(x, p = 0, q = 0,
     params = which(search_matrix == min(search_matrix), arr.ind = TRUE)
     params = params - 1
   }
-  # else{
-  #   print(p)
-  #   tscount_model = tscount::tsglm(x,
-  #                                  model =
-  #                                    list(past_obs = p,
-  #                                         past_mean = q),
-  #                                  link = link, distr = distr
-  #   )
-  #   params = c(p,q)
-  # }
   if(params[1] == 0) past_obs = NULL
     else past_obs = 1:params[1]
   if(params[2] == 0) past_mean = NULL
@@ -59,6 +51,55 @@ ingarch_tscall = function(x, p = 0, q = 0,
                                  )
   return(list(params = params, tscount_model = tscount_model))
 }
+
+check_residuals = function(model){
+  model$fitted()
+}
+
+#' Estimate a INGARCH model
+#'
+#' Estimate INGARCH model with Poisson or Negative Binomial Distribution,
+#' where also is provide a automatic parameter algorithm selection
+#' for the Autorregressive and Moving Avarege params
+#'
+#'
+#' @param formula Model specification (see "Specials" section).
+#' @param ic Character, can be 'AIC','BIC' or 'QIC'. The information criterion used in selecting the model.
+#' @param link Character, can be 'identity' or 'log' The link function used for the generalized model
+#' @param distr Character, can be 'poisson' or 'nbinom'. The probabilty distribution used for the generalized model
+#' @param trace Logical
+#'
+#' @section Specials:
+#'
+#' \subsection{pq}{
+#' Also called p:Autoregressive and q:Moving Avarages,
+#' the pq can be define by the user,
+#' or if it's omited  the automatic parameter selection algorithm is trigered.
+#'
+#'
+#' \subsection{xreg}{
+#' Exogenous regressors can be included in an AR model without explicitly using the `xreg()` special.
+#' Common exogenous regressor specials as specified in [`common_xregs`] can also be used.
+#' These regressors are handled using [stats::model.frame()],
+#' and so interactions and other functionality behaves similarly to [stats::lm()].
+#'
+#' The inclusion of a constant in the model follows the similar rules to [`stats::lm()`],
+#' where including `1` will add a constant and `0` or `-1` will remove the constant.
+#' If left out, the inclusion of a constant will be determined by minimising `ic`.
+#'
+#' \preformatted{
+#' xreg(..., fixed = list())
+#' }
+#'
+#' \tabular{ll}{
+#'   `...`      \tab Bare expressions for the exogenous regressors (such as `log(x)`)\cr
+#'   `fixed`    \tab A named list of fixed parameters for coefficients. The names identify the coefficient, and should match the name of the regressor. For example, `fixed = list(constant = 20)`.
+#' }
+#' }
+#'
+#' @return A model specification.
+#' @export
+
 
 INGARCH = function(formula,
                     ic = c('AIC', 'BIC', 'QIC'),
@@ -183,10 +224,29 @@ model_sum.INGARCH = function(x){
 }
 
 report.INGARCH = function(x){
+  model_sum_obj = x$tsmodel |>
+    summary()
+
+    rep_model = model_sum_obj$coefficients |>
+    as.data.frame() |>
+    tibble::rownames_to_column() |>
+    dplyr::rename(term = 1) |>
+    tidyr::pivot_longer(-term, names_to = 'statistic') |>
+    tidyr::pivot_wider(names_from = term) |>
+    dplyr::filter(statistic == 'Estimate' | statistic == 'Std.Error')
+
   cat('\n')
-  cat(sprintf("%s INGARCH[%i, %i] w/ %s link", x$distr, x$coef[1], x$coef[2], x$link))
+  cat(sprintf("%s INGARCH(%i, %i) w/ %s link", x$distr, x$coef[1], x$coef[2], x$link))
   cat('\n')
-  cat(print(x$tsmodel$coefficients))
+  rep_model |> print()
+  cat('\n')
+  cat(paste('log likelihood='), model_sum_obj$logLik, sep = '')
+  cat('\n')
+  cat(paste('AIC='), model_sum_obj$AIC, sep = '')
+  cat('\n')
+  cat(paste('BIC='), model_sum_obj$BIC, sep = '')
+  cat('\n')
+  cat(paste('QIC='), model_sum_obj$QIC, sep = '')
 }
 
 tidy.INGARCH = function(x){
@@ -198,9 +258,12 @@ tidy.INGARCH = function(x){
     dplyr::rename(term = 1,
                   estimate = 2,
                   std.error = 3) |>
-    dplyr::mutate(term = stringr::str_replace(term, '(Intercept)', 'constant'),
-                  term = stringr::str_replace(term, 'beta', 'ar'),
-                  term = stringr::str_replace(term, 'alpha', 'ma'))
+    dplyr::mutate(term =
+                    stringr::str_replace(term, '(Intercept)', 'constant'),
+                  term =
+                    stringr::str_replace(term, 'beta', 'ar'),
+                  term =
+                    stringr::str_replace(term, 'alpha', 'ma'))
 
 
   return(model_summary)
@@ -242,7 +305,8 @@ teste_tscount = tscount::tsglm(tsibbledata::aus_production$Beer, model = list(pa
                                xreg = covari)
 
 teste_me = ingarch_tscall(tsibbledata::aus_production$Beer, ic = 'AIC', distr = 'poisson', link = 'identity')
-
+teste_sum  = teste_me$tscount_model |> summary()
+teste_sum$AIC
 
 
 
@@ -251,7 +315,11 @@ tsibbledata::aus_production |>
         ing_automatic = INGARCH(Beer, ic = 'BIC', link = 'identity', distr = 'poisson', trace = T))
 
 teste_fab = tsibbledata::aus_production |>
-  model(ing_automatic = INGARCH(Beer ~  pq(1,1), ic = 'AIC', link = 'identity', distr = 'poisson', trace = T))
+  model(ing_automatic =
+          INGARCH(Beer ~  pq(1,1) + Gas,
+                  ic = 'AIC', link = 'identity',
+                  distr = 'poisson', trace = T),
+        ar = ARIMA(Beer))
 
 tsibbledata::aus_production |>
   model(ar = INGARCH(Beer ~ pq(1,1), distr = 'nbinom')) |>
@@ -260,4 +328,7 @@ tsibbledata::aus_production |>
 
 tsibbledata::aus_production |>
   model(ar = ARIMA(Beer ~ pdq(1,0,1))) |> report()
+
+
+teste_fab |> select(ing_automatic) |> report()
 

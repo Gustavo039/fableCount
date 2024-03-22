@@ -169,30 +169,6 @@ model_sum.GLARMA = function(x){
   out
 }
 
-report.GLARMA = function(x){
-  cat(print(x$gl_model$delta[1,1]))
-  cat('\n')
-  cat(sprintf("%s GLARMA(%i, %i)", x$distr, x$coef[1], x$coef[2]))
-  cat(print('1'))
-  cat('\n')
-  cat(sprint("Intercept: %i", x$gl_model$delta[1,1] |> round(0)))
-  # cat('\n')
-  # if(x$coef[1] != 0){
-  #   cat(sprint('AR Params'))
-  #   print.default(
-  #     setNames(x$gl_model$delta[1:x$coef[1],1], paste0("AR", seq_len(x$coef[1]))),
-  #     print.gap = 2
-  #     )
-  # }
-  # if(x$coef[3] != 0){
-  #   cat(sprint('MA Params'))
-  #   print.default(
-  #     setNames(x$gl_model$delta[x$coef[1]+1:x$coef[3]+1,1], paste0("AR", seq_len(x$coef[3]))),
-  #     print.gap = 2
-  #   )
-  # }
-}
-
 
 
 split_tibble <- function(input_tibble) {
@@ -223,42 +199,51 @@ report.GLARMA = function(x){
   if(x$distr == 'Poi')
     distr_x = 'Poisson'
   else distr_x = 'Negative Binomial'
-  sum_model = x$gl_model |> summary()
-  sum_model[14 : 14 + (x$gl_model$pq)] |>
-    unlist() |>
-    tibble::as_tibble() |>
-    mutate(stat =
-             rep(c('estim', 'std', 'z.ratio', 'p.value'), 2),
-           term = c(rep('intercept', 4), rep('ar', x$params[1] * 4) ,rep('theta', 4))
-    ) |>
-    pivot_wider(names_from = 'stat', values_from = 'value')
-
-
+  x_tidy = x |> tidy()
   cat('\n')
   cat(sprintf("%s GLARMA(%i, %i)", distr_x, x$coef[1], x$coef[3]))
   cat('\n')
+  x_tidy |> dplyr::filter(statistic == 'estimate' | statistic == 'std_error') |> print()
+  cat('\n')
+  cat(paste('log likelihood='), x$gl_model$logLik, sep = '')
+  cat('\n')
+  cat(paste('AIC='), x$gl_model$aic, sep = '')
 
-  teste_sum[14:15] |>
-    unlist() |>
-    tibble::as_tibble() |>
-    mutate(stat =
-             rep(c('estim', 'std', 'z.ratio', 'p.value'), 2),
-           term = c(rep('intercept', 4), rep('thete', 4))
-    ) |>
-    pivot_wider(names_from = 'stat', values_from = 'value')
+
 }
 
 tidy.GLARMA = function(x){
-  model_summary = x$gl_model |>
-    summary()
-  model_summary$coefficients1 |> print()
-
-  for (i in 1:(model_summary$pq+1)) {
-    coef_name = paste("model_summary$coefficients", i, sep = "")
-    coefficients = rbind(coefficients, get(coef_name))
+  sum_model = x$gl_model |> summary()
+  out = sum_model[14 : (14 + x$gl_model$pq)] |>
+    unlist() |>
+    tibble::as_tibble()
+  if(x$coef[1] == 0) ar_param = NULL
+   else ar_param = paste('ar_', rep(1:x$coef[1], 4) |> sort(), sep = '')
+  if(x$coef[3] == 0) ma_param = NULL
+    else ma_param = paste('ma_', rep(1:x$coef[3], 4) |> sort(), sep = '')
+  if(nrow(sum_model$coefficients1) > 1){
+  coef1 =
+    c(
+      rep('intercept', 4),
+      paste('xreg_',
+            rep(1:(nrow(sum_model$coefficients1) - 1), 4) |>
+              sort(), sep = '')
+      )
   }
+  else coef1 = rep('intercept', 4)
+  out = out |>
+    dplyr::mutate(term =
+                    c(coef1, ar_param, ma_param),
+                  statistic =
+                    rep(c('estimate', 'std_error', 'z_ratio', 'p_value'),
+                        nrow(sum_model$coefficients1)+x$gl_model$pq)
+    ) |>
+    tidyr::pivot_wider(values_from = value, names_from = term)
+
 
 }
+
+
 
 fitted.GLARMA = function(object, ...){
   object$fitted
@@ -291,17 +276,25 @@ forecast.GLARMA = function(object, new_data,...){
 
 ####################
 
+xreg_teste = cbind(
+  rep(1, length(tsibbledata::aus_production$Beer)),
+  tsibbledata::aus_production$Gas) |> as.model.matrix()
+
+xreg_teste = matrix(c(rep(1, 218),
+                      tsibbledata::aus_production$Gas), ncol = 2
+)
 
 
 teste_glarma = glarma_call(y = tsibbledata::aus_production$Beer,
-            xreg = NULL, ic = 'AIC', type = 'Poi',
+            xreg = tsibbledata::aus_production$Gas, ic = 'AIC', type = 'Poi',
                        p = 0, d = 1, q = 1,
                        method = 'FS', residuals = 'Pearson',
                        automatic = F, trace = F)
 
+teste_sum = teste_glarma$gl_model |> summary()
+
 teste_fab = tsibbledata::aus_production |>
-  mutate(Beer = (Beer/20) |> ceiling()) |>
-  model(ing_automatic = GLARMA(Beer ~ pdq(0,1,1),
+  model(ing_automatic = GLARMA(Beer ~ pdq(1,1,0) + Gas,
                                 ic = 'AIC',
                                 distr = 'Poi',
                                 method = 'FS',
@@ -309,5 +302,7 @@ teste_fab = tsibbledata::aus_production |>
                                 trace = T),
         ar = ARIMA(Beer ~ pdq(1,0,1)))
 
+teste_fab |> select(ing_automatic) |> tidy()
 teste_fab |> select(ing_automatic) |> report()
+teste_fab |> select(ar) |> report()
 

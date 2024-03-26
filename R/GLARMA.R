@@ -38,6 +38,54 @@ print(gl_model)
 return(list(params = params, gl_model = gl_model))
 }
 
+
+#' Estimate a GLARMA model
+#'
+#' Estimate Generalized Linear Autoregressive Moving Average  model
+#' with Poisson or Negative Binomial distribution.
+#' Also is provide a automatic parameter algorithm selection for the Autorregressive and Moving Avarege params
+#'
+#'
+#' @param formula Model specification (see "Specials" section).
+#' @param ic Character, can be 'AIC','BIC'. The information criterion used in selecting the model.
+#' @param distr Character, can be 'poisson' or 'nbinom'. The probabilty distribution used for the generalized model
+#' @param trace Logical. If the automatic parameter algorithm is runnig, print the path to the best model estimation
+#' @param check_residuals Logical. If the automatic parameter algorithm is runnig, it checks if the residuals respect the model assumptions
+#'
+#' @section Specials:
+#'
+#' \subsection{pq}{
+#' Also called p:Autoregressive and q:Moving Avarages,
+#' the pq can be define by the user,
+#' or if it's omited  the automatic parameter selection algorithm is trigered.
+#'
+#' The automatic parameter selection algorithm gonna fit the best model based on the information criterion
+#'
+#'
+#' \subsection{xreg}{
+#' Exogenous regressors can be included in an INGARCH model without explicitly using the `xreg()` special.
+#' Common exogenous regressor specials as specified in [`common_xregs`] can also be used.
+#' These regressors are handled using [stats::model.frame()],
+#' and so interactions and other functionality behaves similarly to [stats::lm()].
+#'
+#' The inclusion of a constant in the model follows the similar rules to [`stats::lm()`],
+#' where including `1` will add a constant and `0` or `-1` will remove the constant.
+#' If left out, the inclusion of a constant will be determined by minimising `ic`.
+#'
+#' If a xreg is provided, the model forecast is not avaliable
+#'
+#' \preformatted{
+#' xreg(..., fixed = list())
+#' }
+#'
+#' \tabular{ll}{
+#'   `...`      \tab Bare expressions for the exogenous regressors (such as `log(x)`)\cr
+#'   `fixed`    \tab A named list of fixed parameters for coefficients. The names identify the coefficient, and should match the name of the regressor. For example, `fixed = list(constant = 20)`.
+#' }
+#' }
+#'
+#' @return A model specification.
+#' @export
 GLARMA = function(formula,
                    ic = c('AIC', 'BIC'),
                    distr = c('Poi', 'NegBin'),

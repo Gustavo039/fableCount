@@ -5,7 +5,7 @@ library(tidyverse)
 library(rlang)
 
 
-naive_search = function(x, p = 0, q = 0,
+naive_search = function(x, p = 0, q = 0, P = 0, Q = 0,
                         trace = T,
                         ic  = 'AIC', link = 'identity', distr = 'poisson', xreg = NULL){
   # search_matrix storage a INGARCH(p,q) model in a matrix[p,q]
@@ -73,7 +73,6 @@ arma_to_ingarch = function(x, p = 0, q = 0,
                        order = model_report)
       )
 
-    arma_model |> print()
   params =
     list(pq =
            arma_model |>
@@ -118,7 +117,7 @@ clean_params = function(params_vector){
 ingarch_tscall = function(x, p = 0, q = 0, P = 0, Q = 0,
                           automatic = T, trace = T,
                           ic  = 'AIC', link = 'identity', distr = 'poisson', xreg = NULL,
-                          algorithm = 'arma_to_ingarch'){
+                          algorithm = c('naive_search', 'arma_to_ingarch')){
 
   params = c(p,q)
   if(automatic == T){
@@ -128,7 +127,6 @@ ingarch_tscall = function(x, p = 0, q = 0, P = 0, Q = 0,
                    distr = 'poisson', xreg = NULL)
   }
   params = clean_params(params)
-  print(params)
   tscount_model = tscount::tsglm(x,
                                  model =
                                    list(past_obs = params[[1]],
@@ -137,7 +135,9 @@ ingarch_tscall = function(x, p = 0, q = 0, P = 0, Q = 0,
                                  distr = distr,
                                  xreg = xreg[[1]]$xreg
                                  )
-  return(list(params = params, tscount_model = tscount_model))
+  params_ret = lapply(params, max) |> unlist()
+  params_ret |> print()
+  return(list(params = params_ret, tscount_model = tscount_model))
 }
 
 check_residuals = function(model){
@@ -320,8 +320,11 @@ train_INGARCH = function(.data, specials, ic,
 }
 
 model_sum.INGARCH = function(x){
-  if(is.na(x$tsmodel$xreg[1])) out = sprintf("INGARCH(%i, %i)", x$coef[1],x$coef[2])
-  else out = sprintf("INGARCH(%i, %i) w/ covariates", x$coef[1],x$coef[2])
+  print(x$coef)
+  if(is.na(x$tsmodel$xreg[1]) & length(x$coef) <= 2) out = sprintf("INGARCH(%i, %i)", x$coef[1],x$coef[2])
+  else if(is.na(x$tsmodel$xreg[1]) & length(x$coef) > 2) out = sprintf("Seasonal INGARCH(%i, %i)(%i,%i)[%i]", x$coef[1],x$coef[2], x$coef[3], x$coef[4], x$coef[5])
+  else if(is.na(x$tsmodel$xreg[1]) == F & length(x$coef) <= 2) out = sprintf("INGARCH(%i, %i) w/ covariates", x$coef[1],x$coef[2])
+  else out = sprintf("Seasonal INGARCH(%i, %i)[%i,%i][%i] w/ covariates", x$coef[1],x$coef[2], x$coef[3], x$coef[4], x$coef[5])
   out
 }
 
@@ -450,46 +453,5 @@ forecast.INGARCH = function(object, new_data,...){
 
   ret_values
 }
-
-
-
-#################
-
-covari = tsibbledata::aus_production$Gas |>
-  as.matrix()
-colnames(covari) = 'Gas'
-teste_tscount = tscount::tsglm(tsibbledata::aus_production$Beer, model = list(past_obs = NULL, past_mean = NULL),
-                               link = 'identity',
-                               distr = 'poisson',
-                               xreg = covari)
-
-teste_me = ingarch_tscall(tsibbledata::aus_production$Beer, ic = 'AIC', distr = 'poisson', link = 'identity')
-teste_sum  = teste_me$tscount_model |> summary()
-teste_sum$AIC
-
-ingarch_tscall(tsibbledata::aus_production$Beer, ic = 'AIC', distr = 'poisson', link = 'identity')
-
-tsibbledata::aus_production |>
-  model(ing = INGARCH(Beer ~ pq(0,2), link = 'identity', distr = 'poisson'),
-        ing_automatic = INGARCH(Beer, ic = 'BIC', link = 'identity', distr = 'poisson', trace = T))
-
-teste_fab = tsibbledata::aus_production |>
-  model(ing = INGARCH(Beer, ic = 'AIC', algorithm = 'arma_to_ingarch'))
-
-tsibbledata::aus_production |>
-  model(ar = INGARCH(Beer ~ pq(1,1), distr = 'nbinom')) |>
-  select(ar) |>
-  forecast(h = 2) |> hilo()
-
-rep_teste = tsibbledata::aus_production |>
-  model(ar = ARIMA(Beer ~ pdq(1,0,1)))
-
-rep_teste$ar[1] |> as.character() |>
-  stringr::str_extract("\\[(\\d+)\\]") |>
-  stringr::str_extract("\\d+") |>
-  as.numeric()
-
-teste_fab |> select(ing_automatic) |> report()
-teste_fab |> select(ing_automatic) |> forecast(h = 1)
 
 

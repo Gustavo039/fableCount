@@ -219,30 +219,31 @@ model_sum.GLARMA = function(x){
 
 
 
-split_tibble <- function(input_tibble) {
+split_tibble = function(input_tibble) {
   # Calculate the number of rows needed
-  num_rows <- nrow(input_tibble) %/% 4
+  num_rows = nrow(input_tibble) %/% 4
 
   # Initialize an empty list to store rows
-  rows <- list()
+  rows = list()
 
   # Loop through each row and extract the data for 4 columns
   for (i in 1:num_rows) {
-    start_row <- (i - 1) * 4 + 1
-    end_row <- min(i * 4, nrow(input_tibble))
-    rows[[i]] <- input_tibble[start_row:end_row, 1]
+    start_row = (i - 1) * 4 + 1
+    end_row = min(i * 4, nrow(input_tibble))
+    rows[[i]] = input_tibble[start_row:end_row, 1]
   }
 
   # Pad rows with NA values if necessary to ensure consistent column lengths
-  max_length <- max(sapply(rows, length))
-  rows <- sapply(rows, function(row) c(row, rep(NA, max_length - length(row))))
+  max_length = max(sapply(rows, length))
+  rows = sapply(rows, function(row) c(row, rep(NA, max_length - length(row))))
 
   # Create a tibble from the list of rows
-  result_tibble <- as_tibble(do.call(cbind, rows))
+  result_tibble = as_tibble(do.call(cbind, rows))
 
   return(result_tibble)
 }
 
+#' @export
 report.GLARMA = function(x){
   if(x$distr == 'Poi')
     distr_x = 'Poisson'
@@ -260,6 +261,17 @@ report.GLARMA = function(x){
 
 }
 
+
+#' Tidy a fable model
+#'
+#' Returns the coefficients from the model in a `tibble` format.
+#'
+#' @inheritParams generics::tidy
+#'
+#' @return The model's coefficients in a `tibble`.
+#'
+#' @examples
+#' @export
 tidy.GLARMA = function(x){
   sum_model = x$gl_model |> summary()
   out = sum_model[14 : (14 + x$gl_model$pq)] |>
@@ -292,11 +304,32 @@ tidy.GLARMA = function(x){
 }
 
 
-
+#' Extract fitted values from a fable model
+#'
+#' Extracts the fitted values.
+#'
+#' @inheritParams forecast.INGARCH
+#'
+#' @return A vector of fitted values.
+#'
+#' @examples
+#' @export
 fitted.GLARMA = function(object, ...){
   object$fitted
 }
 
+
+#' Extract residuals from a fable model
+#'
+#' Extracts the residuals.
+#'
+#' @inheritParams forecast.INGARCH
+#' @param type The type of residuals to extract.
+#'
+#' @return A vector of fitted residuals.
+#'
+#' @examples
+#' @export
 residuals.GLARMA = function(object, ...){
   object$residuals
 }
@@ -310,6 +343,27 @@ glance.GLARMA = function(x, ...){
 }
 
 
+
+
+#' Forecast a model from the fable package
+#'
+#' Produces forecasts from a trained model.
+#'
+#' Predict future observations based on a fitted GLM-type model for time series of counts.
+#' For 1 step ahead, it returns parametric forecast, based on the Poisson distribution,
+#' for multiples steps forecast, the distribution is not know analytically, so it uses a parametric bootstrap
+#'
+#' @inheritParams generics::forecast
+#' @param new_data Tsibble, it has to contains the time points and exogenous regressors to produce forecasts for.
+#' @param bootstrap Logical, if `TRUE`, then forecast distributions are computed using simulation with resampled errors.
+#' @param times Numeric, the number of sample paths to use in estimating the forecast distribution when `bootstrap = TRUE`.
+#'
+#' @importFrom stats formula residuals
+#'
+#' @return A list of forecasts.
+#'
+#' @examples
+#' @export
 forecast.GLARMA = function(object, new_data,...){
   h = NROW(new_data)
   newdata = matrix(rep(1, h), ncol = 1)

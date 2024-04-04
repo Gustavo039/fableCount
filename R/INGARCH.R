@@ -1,8 +1,5 @@
-globalVariables(c("p", "q", "constant"))
-library(fpp3)
-library(tscount)
-library(tidyverse)
-library(rlang)
+globalVariables(c("p", "q","P", "Q"))
+
 
 
 naive_search = function(x, p = 0, q = 0, P = 0, Q = 0,
@@ -36,10 +33,11 @@ naive_search = function(x, p = 0, q = 0, P = 0, Q = 0,
   return(params)
 }
 
+
+#' @importFrom fable ARIMA
 arma_to_ingarch = function(x, p = 0, q = 0,
                            P = 0, Q = 0,
-                           trace = T, ic  = c('aic', 'bic'),
-                           link = 'identity', distr = 'poisson',
+                           trace = T, ic,
                            xreg = NULL){
   arma_model =
     tibble::tibble(y_var = x,
@@ -47,7 +45,8 @@ arma_to_ingarch = function(x, p = 0, q = 0,
                    lubridate::make_date(year = 1:length(x)) |>
                    tsibble::yearquarter()) |>
     tsibble::as_tsibble(index = time_index) |>
-    model(auto = ARIMA(y_var, ic = ic |> tolower()))
+    model(auto = ARIMA(y_var, ic = ic |> tolower(),
+                       trace = trace))
 
   model_report = arma_model$auto[1] |> as.character() |>
     stringr::str_extract("\\[(\\d+)\\]") |>
@@ -92,26 +91,6 @@ arma_to_ingarch = function(x, p = 0, q = 0,
   return(params)
 }
 
-clean_params = function(params_vector){
-  if(is.na(params_vector[5]) == F){
-    if(params_vector[1] == 0) p = NULL
-      else p = 1:params_vector[1]
-    if(params_vector[2] == 0) q = NULL
-      else q = 1:params_vector[2]
-    params =
-      list(p = c(p, params_vector[5]:(params_vector[5] + params_vector[3] - 1)),
-           q = c(q, params_vector[5]:(params_vector[5] + params_vector[4] - 1))
-      )
-    }
-    else{
-      if(params_vector[1] == 0) p = NULL
-        else p = 1:params_vector[1]
-      if(params_vector[2] == 0) q = NULL
-        else q = 1:params_vector[2]
-      params = list(p,q)
-    }
-  return(params)
-}
 
 
 ingarch_tscall = function(x, p = 0, q = 0, P = 0, Q = 0,
@@ -136,13 +115,9 @@ ingarch_tscall = function(x, p = 0, q = 0, P = 0, Q = 0,
                                  xreg = xreg[[1]]$xreg
                                  )
   params_ret = lapply(params, max) |> unlist()
-  params_ret |> print()
   return(list(params = params_ret, tscount_model = tscount_model))
 }
 
-check_residuals = function(model){
-  model$fitted()
-}
 
 #' Estimate a INGARCH model
 #'
@@ -152,24 +127,34 @@ check_residuals = function(model){
 #'
 #'
 #' @param formula Model specification (see "Specials" section).
-#' @param ic Character, can be 'AIC','BIC' or 'QIC'. The information criterion used in selecting the model.
+#' @param ic Character, can be 'aic' 'bic' or 'qic'. The information criterion used in selecting the model.
 #' @param link Character, can be 'identity' or 'log' The link function used for the generalized model
 #' @param distr Character, can be 'poisson' or 'nbinom'. The probabilty distribution used for the generalized model
+#' @param algorithm Character, specifies the automatic parameter selection algorithm. Can be 'naive_search' or 'arma_to_ingarch'.
+#' If 'naive_search' is selected, a search in a 4x4 matrix parameter space is performed, where the model to minimize the criterion value is selected.
+#' If 'arma_to_ingarch' is selected, uses an auto_arma as the starting point for the selection algorithm.
+#' The ‘arma_to_ingarch’ is the only one to perform a seasonal adjustment
 #' @param trace Logical. If the automatic parameter algorithm is runnig, print the path to the best model estimation
-#' @param check_residuals Logical. If the automatic parameter algorithm is runnig, it checks if the residuals respect the model assumptions
 #'
 #' @section Specials:
 #'
 #' \subsection{pq}{
-#' Also called p:Autoregressive and q:Moving Avarages,
-#' the pq can be define by the user,
-#' or if it's omited  the automatic parameter selection algorithm is trigered.
-#'
+#' pq defines the non-seasonal autoregressive and moving avarages terms,
+#' it can be define by the user,
+#' or if it's omited, the automatic parameter selection algorithm is trigered
 #' The automatic parameter selection algorithm gonna fit the best model based on the information criterion
+#' }
+#'
+#' \subsection{PQ}{
+#' PQ defines the seasonal autoregressive and moving avarages terms,
+#' it can be define by the user,
+#' or if it's omited, the automatic parameter selection algorithm is trigered (only for 'arma_to_ingarch' algorithm)
+#' The automatic parameter selection algorithm gonna fit the best model based on the information criterion
+#' }
 #'
 #'
 #' \subsection{xreg}{
-#' Exogenous regressors can be included in an INGARCH model without explicitly using the `xreg()` special.
+#' Exogenous regressors can be included in a INGARCH model without explicitly using the `xreg()` special.
 #' Common exogenous regressor specials as specified in [`common_xregs`] can also be used.
 #' These regressors are handled using [stats::model.frame()],
 #' and so interactions and other functionality behaves similarly to [stats::lm()].
@@ -177,6 +162,7 @@ check_residuals = function(model){
 #' The inclusion of a constant in the model follows the similar rules to [`stats::lm()`],
 #' where including `1` will add a constant and `0` or `-1` will remove the constant.
 #' If left out, the inclusion of a constant will be determined by minimising `ic`.
+#' }
 #'
 #' If a xreg is provided, the model forecast is not avaliable
 #'
@@ -188,18 +174,41 @@ check_residuals = function(model){
 #'   `...`      \tab Bare expressions for the exogenous regressors (such as `log(x)`)\cr
 #'   `fixed`    \tab A named list of fixed parameters for coefficients. The names identify the coefficient, and should match the name of the regressor. For example, `fixed = list(constant = 20)`.
 #' }
-#' }
+#'
 #'
 #' @return A model specification.
+#' @examples
+#' \dontrun{
+#' # Manual INGARCH specification
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_ing = INGARCH(Beer ~ pq(1,1)))
+#'
+#' # Automatic INGARCH specification
+#'  tsibbledata::aus_production |>
+#' fabletools::model(auto_ing_naive =
+#'                     INGARCH(Beer,
+#'                             ic = 'aic',
+#'                             trace = TRUE,
+#'                            algorithm = 'naive_search'),
+#'                   auto_ing_arm_ing =
+#'                     INGARCH(Beer,
+#'                             ic = 'aic',
+#'                             trace = TRUE,
+#'                             algorithm = 'arma_to_ingarch'))
+#'                             }
+#'
+#'
+#' @importFrom stats fitted
+#' @importFrom stats var
 #' @export
 INGARCH = function(formula,
-                    ic = c('AIC', 'BIC', 'QIC'),
+                    ic = c('aic', 'bic', 'qic'),
                     link = c('identity', 'log'),
                     distr = c('poisson', 'nbinom'),
                     algorithm = c('naive_search', 'arma_to_ingarch'),
                     trace = F) {
 
-  ic = match.arg(ic)
+  ic = match.arg(ic) |> toupper()
   link = match.arg(link)
   distr = match.arg(distr)
 
@@ -319,6 +328,7 @@ train_INGARCH = function(.data, specials, ic,
   )
 }
 
+#' @export
 model_sum.INGARCH = function(x){
   print(x$coef)
   if(is.na(x$tsmodel$xreg[1]) & length(x$coef) <= 2) out = sprintf("INGARCH(%i, %i)", x$coef[1],x$coef[2])
@@ -329,8 +339,8 @@ model_sum.INGARCH = function(x){
 }
 
 #' @export
-report.INGARCH = function(x){
-  model_sum_obj = x$tsmodel |>
+report.INGARCH = function(object, ...){
+  model_sum_obj = object$tsmodel |>
     summary()
 
     rep_model = model_sum_obj$coefficients |>
@@ -342,7 +352,7 @@ report.INGARCH = function(x){
     dplyr::filter(statistic == 'Estimate' | statistic == 'Std.Error')
 
   cat('\n')
-  cat(sprintf("%s INGARCH(%i, %i) w/ %s link", x$distr, x$coef[1], x$coef[2], x$link))
+  cat(sprintf("%s INGARCH(%i, %i) w/ %s link", object$distr, object$coef[1], object$coef[2], object$link))
   cat('\n')
   rep_model |> print()
   cat('\n')
@@ -365,8 +375,14 @@ report.INGARCH = function(x){
 #' @return The model's coefficients in a `tibble`.
 #'
 #' @examples
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_ing = INGARCH(Beer ~ pq(1,1))) |>
+#'   dplyr::select(manual_ing) |>
+#'   fabletools::tidy()
+#'
+#' @import stringr
 #' @export
-tidy.INGARCH = function(x){
+tidy.INGARCH = function(x, ...){
   model_summary = x$tsmodel |>
     summary() |>
     {\(x)x$coefficients}() |>
@@ -396,6 +412,12 @@ tidy.INGARCH = function(x){
 #' @return A vector of fitted values.
 #'
 #' @examples
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_ing = INGARCH(Beer ~ pq(1,1))) |>
+#'   dplyr::select(manual_ing) |>
+#'   fitted()
+#'
+#' @import fabletools
 #' @export
 fitted.INGARCH = function(object, ...){
   object$fitted
@@ -407,18 +429,48 @@ fitted.INGARCH = function(object, ...){
 #' Extracts the residuals.
 #'
 #' @inheritParams forecast.INGARCH
-#' @param type The type of residuals to extract.
 #'
 #' @return A vector of fitted residuals.
 #'
 #' @examples
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_ing = INGARCH(Beer ~ pq(1,1) + PQ(1,1))) |>
+#'   dplyr::select(manual_ing) |>
+#'   residuals()
+#'
+#' @import fabletools
 #' @export
 residuals.INGARCH = function(object, ...){
   object$residuals
 }
 
+
+#' Glance a INGARCH model
+#'
+#' Construct a single row summary of the INGARCH model.
+#'
+#' @format A data frame with 1 row, with columns:
+#' \describe{
+#'   \item{sigma2}{The unbiased variance of residuals. Calculated as `sum(residuals^2) / (num_observations - num_pararameters + 1)`}
+#'   \item{log_lik}{The log-likelihood}
+#'   \item{AIC}{Akaike information criterion}
+#'   \item{BIC}{Bayesian information criterion}
+#' }
+#'
+#' @inheritParams generics::glance
+#'
+#' @return A one row tibble summarising the model's fit.
+#'
+#' @examples
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_ing = INGARCH(Beer ~ pq(1,1))) |>
+#'   dplyr::select(manual_ing) |>
+#'   glance()
+#'
+#' @importFrom stats AIC BIC
+#' @export
 glance.INGARCH = function(x, ...){
-  tibble::tibble(sigma2 = x$sigma2,
+  tibble::tibble(sigma2 = sum(x$residuals^2) / (x$n - sum(x$coef) + 1),
                  log_lik = x$tsmodel$logLik,
                  AIC = x$tsmodel |> AIC(),
                  BIC = x$tsmodel |> BIC(),
@@ -430,19 +482,30 @@ glance.INGARCH = function(x, ...){
 #' Produces forecasts from a trained model.
 #'
 #' Predict future observations based on a fitted GLM-type model for time series of counts.
-#' For 1 step ahead, it returns parametric forecast, based on the Poisson distribution,
+#' For 1 step ahead, it returns parametric forecast, based on the 'distr' param especified distribution,
 #' for multiples steps forecast, the distribution is not know analytically, so it uses a parametric bootstrap
 #'
 #' @inheritParams generics::forecast
 #' @param new_data Tsibble, it has to contains the time points and exogenous regressors to produce forecasts for.
-#' @param bootstrap Logical, if `TRUE`, then forecast distributions are computed using simulation with resampled errors.
-#' @param times Numeric, the number of sample paths to use in estimating the forecast distribution when `bootstrap = TRUE`.
 #'
 #' @importFrom stats formula residuals
 #'
 #' @return A list of forecasts.
 #'
 #' @examples
+#'  # 1 step ahead parametric forecast
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_ing = INGARCH(Beer ~ pq(1,1) + PQ(1,1))) |>
+#'   dplyr::select(manual_ing) |>
+#'   fabletools::forecast(h = 1)
+#'
+#' # Multiples steap ahead parametric bootstrap forecast
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_ing = INGARCH(Beer ~ pq(1,1) + PQ(1,1))) |>
+#'   dplyr::select(manual_ing) |>
+#'   fabletools::forecast(h = 4)
+#'
+#' @import fabletools
 #' @export
 forecast.INGARCH = function(object, new_data,...){
   h = NROW(new_data)
@@ -452,6 +515,28 @@ forecast.INGARCH = function(object, new_data,...){
   else ret_values = matrix_to_list(values) |> distributional::dist_sample()
 
   ret_values
+}
+
+clean_params = function(params_vector){
+  if(is.na(params_vector[5]) == F){
+    if(params_vector[1] == 0) p = NULL
+    else p = 1:params_vector[1]
+    if(params_vector[2] == 0) q = NULL
+    else q = 1:params_vector[2]
+    params =
+      list(p = c(p, params_vector[5]:(params_vector[5] + params_vector[3] - 1)),
+           q = c(q, params_vector[5]:(params_vector[5] + params_vector[4] - 1))
+      )
+  }
+  else{
+    if(params_vector[1] == 0) p = NULL
+    else p = 1:params_vector[1]
+    if(params_vector[2] == 0) q = NULL
+    else q = 1:params_vector[2]
+    params = list(p = p,
+                  q = q)
+  }
+  return(params)
 }
 
 

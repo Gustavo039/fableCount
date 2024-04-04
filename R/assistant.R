@@ -1,3 +1,52 @@
+#' @importFrom tibble as_tibble
+split_tibble = function(input_tibble) {
+  # Calculate the number of rows needed
+  num_rows = nrow(input_tibble) %/% 4
+
+  # Initialize an empty list to store rows
+  rows = list()
+
+  # Loop through each row and extract the data for 4 columns
+  for (i in 1:num_rows) {
+    start_row = (i - 1) * 4 + 1
+    end_row = min(i * 4, nrow(input_tibble))
+    rows[[i]] = input_tibble[start_row:end_row, 1]
+  }
+
+  # Pad rows with NA values if necessary to ensure consistent column lengths
+  max_length = max(sapply(rows, length))
+  rows = sapply(rows, function(row) c(row, rep(NA, max_length - length(row))))
+
+  # Create a tibble from the list of rows
+  result_tibble = as_tibble(do.call(cbind, rows))
+
+  return(result_tibble)
+}
+
+
+
+
+
+
+
+matrix_to_list = function(input_matrix) {
+  num_rows = nrow(input_matrix)
+  row_list = vector("list", length = num_rows)
+  for (i in 1:num_rows) {
+    row_list[[i]] = input_matrix[i, ]
+  }
+  row_list = lapply(1:num_rows,
+                    function(i){
+                      input_matrix[i, ]
+                    }
+  )
+  return(row_list)
+}
+
+
+
+
+
 g = function(x, link=c("identity", "log")){
   link = match.arg(link)
   result = if(is.null(x)) NULL else switch(link,
@@ -57,6 +106,129 @@ g_inv_2nd = function(x, link=c("identity", "log")){
   return(result)
 }
 
+tsglm.parameterlist = function(paramvec, model){
+  p = length(model$past_obs)
+  P = seq(along=numeric(p)) #sequence 1:p if p>0 and NULL otherwise
+  q = length(model$past_mean)
+  Q = seq(along=numeric(q)) #sequence 1:p if p>0 and NULL otherwise
+  r = length(paramvec) - (1+p+q)
+  R = seq(along=numeric(r))
+  names(paramvec) = NULL
+  result = list(intercept=paramvec[1], past_obs=paramvec[1+P], past_mean=paramvec[1+p+Q], xreg=paramvec[1+p+q+R])
+  return(result)
+}
+
+tsglm.parametercheck = function(param, link=c("identity", "log"), stopOnError=TRUE, silent=TRUE){
+  #Check parameter vector of a count time series following GLMs
+
+  ##############
+  #Checks and preparations:
+  link = match.arg(link)
+
+  if(link == "identity") parametercheck = function(param){
+    stopifnot(
+      param$intercept>0,
+      param$past_obs>=0,
+      param$past_mean>=0,
+      param$xreg>=0
+    )
+    sum_param_past = sum(param$past_obs)+sum(param$past_mean)
+    if(sum_param_past>=1) stop(paste("Parameters are outside the stationary region, sum of parameters for regression\non past observations and on past conditional means is", sum_param_past, "> 1"))
+    return(TRUE)
+  }
+
+  if(link == "log") parametercheck = function(param){
+    stopifnot(
+      abs(param$past_obs)<1,
+      abs(param$past_mean)<1
+    )
+    sum_param_past = abs(sum(param$past_obs)+sum(param$past_mean))
+    if(sum_param_past>=1) stop(paste("Parameters are outside the stationary region, absolute sum of parameters for\nregression on past observations and on past conditional means is", sum_param_past, "> 1"))
+    return(TRUE)
+  }
+
+  if(stopOnError){
+    result = parametercheck(param)
+  }else{
+    result = try(parametercheck(param), silent=silent)
+    if(inherits(result, "try-error")) result = FALSE
+  }
+  return(result)
+}
+
+simcoefs = function(...) UseMethod("simcoefs")
+#' @exportS3Method tscount::simcoefs
+#' @importFrom tscount tsglm
+#' @importFrom parallel parSapply
+#' @importFrom stats rnorm
+#' @importFrom stats vcov
+#' @importFrom stats rnorm
+simcoefs.tsglm = function(fit, method=c("bootstrap", "normapprox"), B=1, parallel=FALSE, ...){
+  stopifnot(
+    length(B)==1,
+    B%%1==0,
+    B>=1
+  )
+  method = match.arg(method)
+  if(method=="bootstrap"){
+    simfit = function(seed, fit, ...){
+      set.seed(seed)
+      ts_sim = tsglm.sim(fit=fit)$ts
+    fit_sim = tsglm(ts=ts_sim, model=fit$model, xreg=fit$xreg, link=fit$link, distr=fit$distr, score=FALSE, info="none", ...)
+      if(fit$distr=="nbinom" && fit_sim$distr=="poisson") fit_sim$distrcoefs = c(size=NA)
+      result = c(coef(fit_sim), sigmasq=fit_sim$sigmasq, fit_sim$distrcoefs)
+      return(result)
+    }
+    seeds = sample(1e+9, size=B)
+    if(parallel){
+      Sapply = function(X, FUN, ...) parSapply(cl=NULL, X=X, FUN=FUN, ...)
+    }else{
+      Sapply = sapply
+    }
+    coefs = t(Sapply(seeds, simfit, fit=fit, ...))
+    result = list(coefs=coefs)
+  }
+  if(method=="normapprox"){
+    rmvnorm_stable = function(n, mean=rep(0, nrow(sigma)), sigma=diag(length(mean))){
+      #Function for stable generation of random values from a multivariate normal distribution (is robust against numerical deviations from symmetry of the covariance matrix. Code is taken from function rmvnorm in the package mvtnorm and modified accordingly.
+      if(length(mean) != nrow(sigma)) stop("mean and sigma have non-conforming size")
+      ev = eigen(sigma, symmetric=TRUE)
+      ev$values[ev$values < 0] = 0
+      R = t(ev$vectors %*% (t(ev$vectors) * sqrt(ev$values)))
+      centred = matrix(rnorm(n=n*ncol(sigma)), nrow=n, byrow=TRUE) %*% R
+      result = sweep(centred, 2, mean, "+")
+      colnames(result) = names(mean)
+      return(result)
+    }
+    f = 1.1 #one could choose this factor according to the probability of a parameter from the multivariate normal distribution to be outside the parameter space
+    coefs = rmvnorm_stable(n=ceiling(f*B), mean=coef(fit), sigma=vcov(fit))
+    repeat{
+      valid_coefs = apply(coefs, 1, function(x) tsglm.parametercheck(tsglm.parameterlist(paramvec=x, model=fit$model), link=fit$link, stopOnError=FALSE))
+      if(sum(valid_coefs) >= B) break
+      coefs = rbind(coefs, rmvnorm_stable(n=ceiling((B-sum(valid_coefs))*f/mean(valid_coefs)), mean=coef(fit), sigma=vcov(fit)))
+    }
+    use_coefs = which(valid_coefs)[1:B]
+    coefs = coefs[use_coefs, , drop=FALSE]
+    n_invalid = max(use_coefs) - B
+    distrcoefs_matrix = matrix(rep(c(sigmasq=fit$sigmasq, fit$distrcoefs), B), byrow=TRUE, nrow=B)
+    colnames(distrcoefs_matrix) = c("sigmasq", names(fit$distrcoefs))
+    coefs = cbind(coefs, distrcoefs_matrix)
+    result = list(coefs=coefs, n_invalid=n_invalid)
+  }
+  return(result)
+}
+
+
+#' @importFrom stats is.ts
+#' @importFrom stats start
+#' @importFrom stats frequency
+#' @importFrom stats coef
+#' @importFrom stats window
+#' @importFrom stats tsp
+#' @importFrom tscount qdistr
+#' @importFrom tscount pdistr
+#' @importFrom tscount ddistr
+#' @importFrom tscount tsglm.sim
 predict_call_tsglm = function(object, n.ahead=1, newobs=NULL, newxreg=NULL, level=0.95, global=FALSE, type=c("quantiles", "shortest", "onesided"), method=c("conddistr", "bootstrap"), B=1000, estim=c("ignore", "bootstrap", "normapprox", "given"), B_estim=B, coefs_given=NULL, ...){
   newxreg = if(is.null(newxreg)) matrix(0, nrow=n.ahead, ncol=ncol(object$xreg)) else as.matrix(newxreg)  #if no covariates are provided, these are set to zero
   stopifnot(n.ahead>0,
@@ -206,24 +378,6 @@ predict_call_tsglm = function(object, n.ahead=1, newobs=NULL, newxreg=NULL, leve
 }
 
 
-matrix_to_list = function(input_matrix) {
-  num_rows = nrow(input_matrix)
-  row_list = vector("list", length = num_rows)
-  for (i in 1:num_rows) {
-    row_list[[i]] = input_matrix[i, ]
-  }
-  row_list = lapply(1:num_rows,
-                    function(i){
-                      input_matrix[i, ]
-                    }
-  )
-  return(row_list)
-}
-##################
-#TESTE SE PREDICT CONSEGUE RETORNAR O VETOR DE BOOTSTRAP
-dados_teste = tsibbledata::aus_production$Beer
 
-modelo = tscount::tsglm(dados_teste, model = list(past_obs = 1,
-                                         past_mean = c(1:2,5)))
-predict_call_tsglm(modelo, n.ahead = 2)
+
 

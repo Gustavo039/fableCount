@@ -1,40 +1,94 @@
-globalVariables(c("p", "q", "constant"))
-library(fpp3)
-library(tscount)
-library(tidyverse)
-library(rlang)
+globalVariables(c("p", "q","P", "Q"))
 
 
-glarma_call = function(y = y, ic = ic, type = type,
-                       p = 0, d = 0, q = 0,
-                       method = method, residuals = residuals,
-                       automatic = automatic, trace = trace, xreg = NULL){
+arma_to_glarma = function(x, p = 0, q = 0,
+                           P = 0, Q = 0,
+                           trace = T, ic  = 'aic',
+                           link = 'identity', distr = 'poisson',
+                           xreg = NULL){
+  arma_model =
+    tibble::tibble(y_var = x,
+                   time_index =
+                     lubridate::make_date(year = 1:length(x)) |>
+                     tsibble::yearquarter()) |>
+    tsibble::as_tsibble(index = time_index) |>
+    model(auto = ARIMA(y_var, ic = ic |> tolower()))
+
+  model_report = arma_model$auto[1] |> as.character() |>
+    stringr::str_extract("\\[(\\d+)\\]") |>
+    stringr::str_extract("\\d+") |>
+    as.numeric()
+
+  arma_model = arma_model |>
+    tidy() |>
+    dplyr::mutate(term = term |> stringr::str_remove_all("[0-9]"),
+                  id = 1)
+
+
+  test_vector = c('ar', 'ma', 'sar', 'sma')
+  test_vector = test_vector[!(c('ar', 'ma', 'sar', 'sma') %in% arma_model$term)]
+
+  arma_model = tibble::tibble(term = test_vector,
+                              id = rep(0, length(test_vector))) |>
+    dplyr::bind_rows(arma_model) |>
+    dplyr::group_by(term) |>
+    dplyr::summarise(order = sum(id)) |>
+    dplyr::bind_rows(
+      tibble::tibble(term = 'seas_index',
+                     order = model_report)
+    )
+
+  params =
+    list(pq =
+           arma_model |>
+           dplyr::filter(term == 'ar' | term == 'ma') |>
+           dplyr::pull(order),
+         PQ =
+           arma_model |>
+           dplyr::filter(term == 'sar' | term == 'sma' |  term == 'seas_index') |>
+           dplyr::pull(order))
+
+  params =
+    c(params$pq[1],
+      params$pq[2],
+      params$PQ[1],
+      params$PQ[2],
+      params$PQ[3])
+  return(params)
+}
+
+#' @importFrom glarma glarma
+glarma_call = function(y = y, ic = ic, type = 'Poi',
+                       p = 0, q = 0,
+                       method = 'NR', residuals = 'Pearson',
+                       automatic = automatic, trace = T, xreg = NULL){
+
   if(is.null(xreg) == F)
       xreg = cbind(rep(1, length(y)), xreg)
      else
        xreg = matrix(rep(1, length(y)), ncol = 1)
   colnames(xreg)[1] = 'Intercept'
-  params = c(p, d, q)
+  params = c(p, q)
   if(automatic){
-    warning('Automatic parameter selection is not avaliable yet')
+    params = arma_to_glarma(x = y, p = 0, q = 0,
+                   P = 0, Q = 0,
+                   trace = trace, ic = ic,
+                   xreg = xreg)
   }
-  if(params[1] == 0) past_obs = NULL
-  else past_obs = 1:params[1]
-  if(params[3] == 0) past_mean = NULL
-  else past_mean = 1:params[3]
+  params_cleaned = clean_params(params)
   gl_model = tryCatch(expr = glarma::glarma(y = y,
                                X = xreg,
-                               thetaLags = past_mean,
-                               phiLags = past_obs,
+                               thetaLags = params_cleaned$p,
+                               phiLags = params_cleaned$q,
                                type = type,
                                method = method,
                                residuals = residuals) ,
                       error = function(err){
-                        stop('An error has occurred in the model estimation, try changing the model parameters')
+                        if(automatic) stop('The automatic selection algorithm failed to find stable parameters')
+                        else stop('An error has occurred in the model estimation, try changing the model parameters')
                         return(NA)
                       })
 
-print(gl_model)
 return(list(params = params, gl_model = gl_model))
 }
 
@@ -43,27 +97,34 @@ return(list(params = params, gl_model = gl_model))
 #'
 #' Estimate Generalized Linear Autoregressive Moving Average  model
 #' with Poisson or Negative Binomial distribution.
-#' Also is provide a automatic parameter algorithm selection for the Autorregressive and Moving Avarege params
+#' Also is provide a automatic parameter algorithm selection for the Autorregressive and Moving Average params
 #'
 #'
 #' @param formula Model specification (see "Specials" section).
 #' @param ic Character, can be 'AIC','BIC'. The information criterion used in selecting the model.
 #' @param distr Character, can be 'poisson' or 'nbinom'. The probabilty distribution used for the generalized model
+#' @param method Character, can be 'FS' (Fisher scoring) or 'NR' (Newton-Raphson). The method of iteration to be used
+#' @param residuals Character, can be 'Pearson' or 'Score'. The type of residuals to be used
 #' @param trace Logical. If the automatic parameter algorithm is runnig, print the path to the best model estimation
-#' @param check_residuals Logical. If the automatic parameter algorithm is runnig, it checks if the residuals respect the model assumptions
 #'
 #' @section Specials:
 #'
 #' \subsection{pq}{
-#' Also called p:Autoregressive and q:Moving Avarages,
-#' the pq can be define by the user,
-#' or if it's omited  the automatic parameter selection algorithm is trigered.
-#'
+#' pq defines the non-seasonal autoregressive and moving avarages terms,
+#' it can be define by the user,
+#' or if it's omited, the automatic parameter selection algorithm is trigered
 #' The automatic parameter selection algorithm gonna fit the best model based on the information criterion
+#' }
 #'
+#' \subsection{PQ}{
+#' PQ defines the seasonal autoregressive and moving avarages terms,
+#' it can be define by the user,
+#' or if it's omited, the automatic parameter selection algorithm is trigered (only for 'arma_to_GLARMA' algorithm)
+#' The automatic parameter selection algorithm gonna fit the best model based on the information criterion
+#' }
 #'
 #' \subsection{xreg}{
-#' Exogenous regressors can be included in an INGARCH model without explicitly using the `xreg()` special.
+#' Exogenous regressors can be included in an GLARMA model without explicitly using the `xreg()` special.
 #' Common exogenous regressor specials as specified in [`common_xregs`] can also be used.
 #' These regressors are handled using [stats::model.frame()],
 #' and so interactions and other functionality behaves similarly to [stats::lm()].
@@ -84,10 +145,22 @@ return(list(params = params, gl_model = gl_model))
 #' }
 #' }
 #'
+#' @examples
+#' # Manual GLARMA specification
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_gla = GLARMA(Beer ~ pq(1,0)))
+#'
+#' # Automatic GLARMA specification
+#' tsibbledata::aus_production |>
+#'   fabletools::model(auto_gla = GLARMA(Beer, ic = 'aic'))
+#'
+#'
 #' @return A model specification.
+#' @importFrom stats fitted
+#' @importFrom stats var
 #' @export
 GLARMA = function(formula,
-                   ic = c('AIC', 'BIC'),
+                   ic = c('aic','bic'),
                    distr = c('Poi', 'NegBin'),
                    method = c('FS', 'NR'),
                    residuals = c('Pearson', 'Score'),
@@ -117,7 +190,7 @@ GLARMA = function(formula,
 }
 
 specials_GLARMA = new_specials(
-  pdq = function(p = 'not choosen', d = 'not choosen', q = 'not choosen',
+  pq = function(p = 'not choosen', q = 'not choosen',
                 p_init = 2, q_init = 2,
                 fixed = list()) {
 
@@ -159,7 +232,7 @@ specials_GLARMA = new_specials(
       fixed = fixed
     )
   },
-  .required_specials = "pdq",
+  .required_specials = "pq",
   .xreg_specials = names(common_xregs)
 )
 
@@ -173,13 +246,12 @@ train_GLARMA = function(.data, specials, ic,
 
 
   automatic = F
-  if(specials$pdq[[1]]$p |>
+  if(specials$pq[[1]]$p |>
      is.character()) automatic = T
   xreg = specials$xreg
   glarma_model = glarma_call(y = y,
-                               p = specials$pdq[[1]]$p,
-                               d = specials$pdq[[1]]$d,
-                               q = specials$pdq[[1]]$q,
+                               p = specials$pq[[1]]$p,
+                               q = specials$pq[[1]]$q,
                                ic = ic,
                                type = distr,
                                method = method,
@@ -211,52 +283,29 @@ train_GLARMA = function(.data, specials, ic,
   )
 }
 
+#' @export
 model_sum.GLARMA = function(x){
-  if(x$gl_model$r == 1) out = sprintf("GLARMA(%i, %i)", x$coef[1],x$coef[3])
-  else out = sprintf("GLARMA(%i, %i) w/ covariates", x$coef[1], x$coef[3])
+  if(x$gl_model$r == 1) out = sprintf("GLARMA(%i, %i)", x$coef[1], x$coef[2] )
+  else out = sprintf("GLARMA(%i, %i) w/ covariates", x$coef[1], x$coef[2])
   out
 }
 
 
 
-split_tibble = function(input_tibble) {
-  # Calculate the number of rows needed
-  num_rows = nrow(input_tibble) %/% 4
-
-  # Initialize an empty list to store rows
-  rows = list()
-
-  # Loop through each row and extract the data for 4 columns
-  for (i in 1:num_rows) {
-    start_row = (i - 1) * 4 + 1
-    end_row = min(i * 4, nrow(input_tibble))
-    rows[[i]] = input_tibble[start_row:end_row, 1]
-  }
-
-  # Pad rows with NA values if necessary to ensure consistent column lengths
-  max_length = max(sapply(rows, length))
-  rows = sapply(rows, function(row) c(row, rep(NA, max_length - length(row))))
-
-  # Create a tibble from the list of rows
-  result_tibble = as_tibble(do.call(cbind, rows))
-
-  return(result_tibble)
-}
-
 #' @export
-report.GLARMA = function(x){
-  if(x$distr == 'Poi')
+report.GLARMA = function(object, ...){
+  if(object$distr == 'Poi')
     distr_x = 'Poisson'
   else distr_x = 'Negative Binomial'
-  x_tidy = x |> tidy()
+  x_tidy = object |> tidy()
   cat('\n')
-  cat(sprintf("%s GLARMA(%i, %i)", distr_x, x$coef[1], x$coef[3]))
+  cat(sprintf("%s GLARMA(%i, %i)", distr_x, object$coef[1], object$coef[2]))
   cat('\n')
   x_tidy |> dplyr::filter(statistic == 'estimate' | statistic == 'std_error') |> print()
   cat('\n')
-  cat(paste('log likelihood='), x$gl_model$logLik, sep = '')
+  cat(paste('log likelihood='), object$gl_model$logLik, sep = '')
   cat('\n')
-  cat(paste('AIC='), x$gl_model$aic, sep = '')
+  cat(paste('AIC='), object$gl_model$aic, sep = '')
 
 
 }
@@ -271,16 +320,21 @@ report.GLARMA = function(x){
 #' @return The model's coefficients in a `tibble`.
 #'
 #' @examples
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_gla = GLARMA(Beer ~ pq(1,0))) |>
+#'   dplyr::select(manual_gla) |>
+#'   fabletools::tidy()
+#'
 #' @export
-tidy.GLARMA = function(x){
+tidy.GLARMA = function(x, ...){
   sum_model = x$gl_model |> summary()
   out = sum_model[14 : (14 + x$gl_model$pq)] |>
     unlist() |>
     tibble::as_tibble()
   if(x$coef[1] == 0) ar_param = NULL
    else ar_param = paste('ar_', rep(1:x$coef[1], 4) |> sort(), sep = '')
-  if(x$coef[3] == 0) ma_param = NULL
-    else ma_param = paste('ma_', rep(1:x$coef[3], 4) |> sort(), sep = '')
+  if(x$coef[2] == 0) ma_param = NULL
+    else ma_param = paste('ma_', rep(1:x$coef[2], 4) |> sort(), sep = '')
   if(nrow(sum_model$coefficients1) > 1){
   coef1 =
     c(
@@ -308,11 +362,15 @@ tidy.GLARMA = function(x){
 #'
 #' Extracts the fitted values.
 #'
-#' @inheritParams forecast.INGARCH
+#' @inheritParams forecast.GLARMA
 #'
 #' @return A vector of fitted values.
 #'
 #' @examples
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_gla = GLARMA(Beer ~ pq(1,0))) |>
+#'   dplyr::select(manual_gla) |>
+#'   fitted()
 #' @export
 fitted.GLARMA = function(object, ...){
   object$fitted
@@ -323,22 +381,46 @@ fitted.GLARMA = function(object, ...){
 #'
 #' Extracts the residuals.
 #'
-#' @inheritParams forecast.INGARCH
-#' @param type The type of residuals to extract.
+#' @inheritParams forecast.GLARMA
 #'
 #' @return A vector of fitted residuals.
 #'
 #' @examples
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_gla = GLARMA(Beer ~ pq(1,0))) |>
+#'   dplyr::select(manual_gla) |>
+#'   residuals()
 #' @export
 residuals.GLARMA = function(object, ...){
   object$residuals
 }
 
+
+#' Glance a GLARMA model
+#'
+#' Construct a single row summary of the GLARMA model.
+#'
+#' @format A data frame with 1 row, with columns:
+#' \describe{
+#'   \item{sigma2}{The unbiased variance of residuals. Calculated as `sum(residuals^2) / (num_observations - num_pararameters + 1)`}
+#'   \item{log_lik}{The log-likelihood}
+#'   \item{AIC}{Akaike information criterion}
+#' }
+#'
+#' @inheritParams generics::glance
+#'
+#' @return A one row tibble summarising the model's fit.
+#'
+#' @examples
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_ing = GLARMA(Beer ~ pq(1,1))) |>
+#'   dplyr::select(manual_ing) |>
+#'   glance()
+#' @export
 glance.GLARMA = function(x, ...){
   tibble::tibble(sigma2 = x$sigma2,
-                 log_lik = x$tsmodel$logLik,
-                 AIC = x$tsmodel |> AIC(),
-                 BIC = x$tsmodel |> BIC(),
+                 log_lik = x$gl_model$logLik,
+                 AIC = x$gl_model$aic,
   )
 }
 
@@ -350,19 +432,20 @@ glance.GLARMA = function(x, ...){
 #' Produces forecasts from a trained model.
 #'
 #' Predict future observations based on a fitted GLM-type model for time series of counts.
-#' For 1 step ahead, it returns parametric forecast, based on the Poisson distribution,
-#' for multiples steps forecast, the distribution is not know analytically, so it uses a parametric bootstrap
+#' Futher informations about the forecast method can be obtained typing ?glarma::forecast
 #'
 #' @inheritParams generics::forecast
 #' @param new_data Tsibble, it has to contains the time points and exogenous regressors to produce forecasts for.
-#' @param bootstrap Logical, if `TRUE`, then forecast distributions are computed using simulation with resampled errors.
-#' @param times Numeric, the number of sample paths to use in estimating the forecast distribution when `bootstrap = TRUE`.
 #'
 #' @importFrom stats formula residuals
 #'
 #' @return A list of forecasts.
 #'
 #' @examples
+#' tsibbledata::aus_production |>
+#'   fabletools::model(manual_gla = GLARMA(Beer ~ pq(1,0))) |>
+#'   dplyr::select(manual_gla) |>
+#'   fabletools::forecast(h = 2)
 #' @export
 forecast.GLARMA = function(object, new_data,...){
   h = NROW(new_data)
@@ -376,35 +459,27 @@ forecast.GLARMA = function(object, new_data,...){
   distributional::dist_poisson(values$Y)
 }
 
-####################
+clean_params = function(params_vector){
+  if(is.na(params_vector[5]) == F){
+    if(params_vector[1] == 0) p = NULL
+    else p = 1:params_vector[1]
+    if(params_vector[2] == 0) q = NULL
+    else q = 1:params_vector[2]
+    params =
+      list(p = c(p, params_vector[5]:(params_vector[5] + params_vector[3] - 1)),
+           q = c(q, params_vector[5]:(params_vector[5] + params_vector[4] - 1))
+      )
+  }
+  else{
+    if(params_vector[1] == 0) p = NULL
+    else p = 1:params_vector[1]
+    if(params_vector[2] == 0) q = NULL
+    else q = 1:params_vector[2]
+    params = list(p = p,
+                  q = q)
+  }
+  return(params)
+}
 
-xreg_teste = cbind(
-  rep(1, length(tsibbledata::aus_production$Beer)),
-  tsibbledata::aus_production$Gas) |> as.model.matrix()
 
-xreg_teste = matrix(c(rep(1, 218),
-                      tsibbledata::aus_production$Gas), ncol = 2
-)
-
-
-teste_glarma = glarma_call(y = tsibbledata::aus_production$Beer,
-            xreg = tsibbledata::aus_production$Gas, ic = 'AIC', type = 'Poi',
-                       p = 0, d = 1, q = 1,
-                       method = 'FS', residuals = 'Pearson',
-                       automatic = F, trace = F)
-
-teste_sum = teste_glarma$gl_model |> summary()
-
-teste_fab = tsibbledata::aus_production |>
-  model(ing_automatic = GLARMA(Beer ~ pdq(1,1,0) + Gas,
-                                ic = 'AIC',
-                                distr = 'Poi',
-                                method = 'FS',
-                                residuals = 'Pearson',
-                                trace = T),
-        ar = ARIMA(Beer ~ pdq(1,0,1)))
-
-teste_fab |> select(ing_automatic) |> tidy()
-teste_fab |> select(ing_automatic) |> report()
-teste_fab |> select(ar) |> report()
 

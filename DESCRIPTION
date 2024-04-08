@@ -1,6 +1,6 @@
 Package: fableCount
 Type: Package
-Title:  INGARCH and GLARMA Models for Count Time Series in Fable Framework
+Title: INGARCH and GLARMA Models for Count Time Series in Fable Framework
 Description: Provides a tidy R interface for count time series analysis. It includes implementation of the INGARCH (Integer Generalized Autoregressive Conditional Heteroskedasticity) model from the 'tscount' package and the GLARMA (Generalized Linear Autoregressive Moving Averages) model from the 'glarma' package. Additionally, it offers automated parameter selection algorithms based on the minimization of a penalized likelihood.
 Version: 0.1.0
 Authors@R: 
@@ -50,3 +50,4 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.3.1
+URL: https://gustavo039.github.io/fableCount/

@@ -178,7 +178,7 @@ ingarch_tscall = function(x, p = 0, q = 0, P = 0, Q = 0,
 #'
 #' @return A model specification.
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' # Manual INGARCH specification
 #' tsibbledata::aus_production |>
 #'   fabletools::model(manual_ing = INGARCH(Beer ~ pq(1,1)))
@@ -206,7 +206,7 @@ INGARCH = function(formula,
                     link = c('identity', 'log'),
                     distr = c('poisson', 'nbinom'),
                     algorithm = c('naive_search', 'arma_to_ingarch'),
-                    trace = F) {
+                    trace = FALSE) {
 
   ic = match.arg(ic) |> toupper()
   link = match.arg(link)

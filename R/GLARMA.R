@@ -164,7 +164,7 @@ GLARMA = function(formula,
                    distr = c('Poi', 'NegBin'),
                    method = c('FS', 'NR'),
                    residuals = c('Pearson', 'Score'),
-                   trace = F) {
+                   trace = FALSE) {
 
   ic = match.arg(ic)
   distr = match.arg(distr)

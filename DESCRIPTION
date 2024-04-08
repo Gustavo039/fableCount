@@ -34,11 +34,11 @@ Imports:
     tidyr,
     distributional,
     lubridate,
-    stringr
+    stringr,
+    tsibbledata
 Suggests:
     Rcpp,
     utils,
-    tsibbledata,
     rlang,
     covr,
     feasts,

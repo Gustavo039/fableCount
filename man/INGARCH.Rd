@@ -10,7 +10,7 @@ INGARCH(
   link = c("identity", "log"),
   distr = c("poisson", "nbinom"),
   algorithm = c("naive_search", "arma_to_ingarch"),
-  trace = F
+  trace = FALSE
 )
 }
 \arguments{
@@ -79,7 +79,7 @@ xreg(..., fixed = list())
 }
 
 \examples{
-\dontrun{
+\donttest{
 # Manual INGARCH specification
 tsibbledata::aus_production |>
   fabletools::model(manual_ing = INGARCH(Beer ~ pq(1,1)))

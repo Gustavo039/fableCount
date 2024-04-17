@@ -175,9 +175,7 @@ GLARMA = function(formula,
   model_GLARMA = new_model_class("GLARMA",
                                   train = train_GLARMA,
                                   specials = specials_GLARMA,
-                                  check = function(.data) {
-                                    if (!tsibble::is_regular(.data)) stop("Data must be regular")
-                                  }
+                                  check = all_tsbl_checks
   )
 
   # Return a model definition which stores the user's model specification

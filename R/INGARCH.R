@@ -215,9 +215,7 @@ INGARCH = function(formula,
   model_INGARCH = new_model_class("INGARCH",
                                  train = train_INGARCH,
                                  specials = specials_INGARCH,
-                                 check = function(.data) {
-                                   if (!tsibble::is_regular(.data)) stop("Data must be regular")
-                                 }
+                                 check = all_tsbl_checks
   )
 
   # Return a model definition which stores the user's model specification

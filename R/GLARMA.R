@@ -460,12 +460,16 @@ forecast.GLARMA = function(object, new_data,...){
 clean_params = function(params_vector){
   if(is.na(params_vector[5]) == F){
     if(params_vector[1] == 0) p = NULL
-    else p = 1:params_vector[1]
+      else p = 1:params_vector[1]
     if(params_vector[2] == 0) q = NULL
-    else q = 1:params_vector[2]
+      else q = 1:params_vector[2]
+    if(params_vector[3] == 0) P = NULL
+      else P = params_vector[5]:(params_vector[5] + params_vector[3] - 1)
+    if(params_vector[4] == 0) Q = NULL
+      else Q = params_vector[5]:(params_vector[5] + params_vector[4] - 1)
     params =
-      list(p = c(p, params_vector[5]:(params_vector[5] + params_vector[3] - 1)),
-           q = c(q, params_vector[5]:(params_vector[5] + params_vector[4] - 1))
+      list(p = c(p, P),
+           q = c(q, Q)
       )
   }
   else{

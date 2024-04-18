@@ -328,7 +328,6 @@ train_INGARCH = function(.data, specials, ic,
 
 #' @export
 model_sum.INGARCH = function(x){
-  print(x$coef)
   if(is.na(x$tsmodel$xreg[1]) & length(x$coef) <= 2) out = sprintf("INGARCH(%i, %i)", x$coef[1],x$coef[2])
   else if(is.na(x$tsmodel$xreg[1]) & length(x$coef) > 2) out = sprintf("Seasonal INGARCH(%i, %i)(%i,%i)[%i]", x$coef[1],x$coef[2], x$coef[3], x$coef[4], x$coef[5])
   else if(is.na(x$tsmodel$xreg[1]) == F & length(x$coef) <= 2) out = sprintf("INGARCH(%i, %i) w/ covariates", x$coef[1],x$coef[2])
@@ -521,9 +520,13 @@ clean_params = function(params_vector){
     else p = 1:params_vector[1]
     if(params_vector[2] == 0) q = NULL
     else q = 1:params_vector[2]
+    if(params_vector[3] == 0) P = NULL
+    else P = params_vector[5]:(params_vector[5] + params_vector[3] - 1)
+    if(params_vector[4] == 0) Q = NULL
+    else Q = params_vector[5]:(params_vector[5] + params_vector[4] - 1)
     params =
-      list(p = c(p, params_vector[5]:(params_vector[5] + params_vector[3] - 1)),
-           q = c(q, params_vector[5]:(params_vector[5] + params_vector[4] - 1))
+      list(p = c(p, P),
+           q = c(q, Q)
       )
   }
   else{
@@ -536,5 +539,4 @@ clean_params = function(params_vector){
   }
   return(params)
 }
-
 

@@ -138,8 +138,6 @@ If left out, the inclusion of a constant will be determined by minimising `ic`.<
 <span class="r-in"><span><span class="co"># Manual INGARCH specification</span></span></span>
 <span class="r-in"><span><span class="fu">tsibbledata</span><span class="fu">::</span><span class="va"><a href="https://tsibbledata.tidyverts.org/reference/aus_production.html" class="external-link">aus_production</a></span> <span class="op">|&gt;</span></span></span>
 <span class="r-in"><span>  <span class="fu">fabletools</span><span class="fu">::</span><span class="fu"><a href="https://fabletools.tidyverts.org/reference/model.html" class="external-link">model</a></span><span class="op">(</span>manual_ing <span class="op">=</span> <span class="fu">INGARCH</span><span class="op">(</span><span class="va">Beer</span> <span class="op">~</span> <span class="fu">pq</span><span class="op">(</span><span class="fl">1</span>,<span class="fl">1</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> p q </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1 1 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;"># A mable: 1 x 1</span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>        manual_ing</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>           <span style="color: #949494; font-style: italic;">&lt;model&gt;</span></span>
@@ -190,8 +188,6 @@ If left out, the inclusion of a constant will be determined by minimising `ic`.<
 <span class="r-out co"><span class="r-pr">#&gt;</span> INGARCH[3, 3], AIC:5731.43 </span>
 <span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>1 error encountered for auto_ing_arm_ing</span>
 <span class="r-wrn co"><span class="r-pr">#&gt;</span> [1] unused arguments (link = "identity", distr = "poisson")</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> p q </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1 1 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;"># A mable: 1 x 2</span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>    auto_ing_naive auto_ing_arm_ing</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>           <span style="color: #949494; font-style: italic;">&lt;model&gt;</span>          <span style="color: #949494; font-style: italic;">&lt;model&gt;</span></span>

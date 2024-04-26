@@ -1,0 +1,162 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+```
+
+# fableCount <a href="https://gustavo039.github.io/fableCount/"><img src="man/figures/logo.PNG" align="right" height="139" alt="fableCount website" /></a>
+
+<!-- badges: start -->
+<!-- badges: end -->
+
+The fableCount R package aims to offer counting time series models for users of the fable framework.
+These models work within the fable framework, which provides the tools to evaluate, visualize, and combine models in a workflow consistent with the tidyverse.
+
+## Installation
+
+You can install the **stable** version from [CRAN](https://cran.r-project.org/package=fableCount):
+
+```{r cran-installation, eval = FALSE}
+install.packages("fableCount")
+```
+
+You can install the **development** version from
+[GitHub](https://github.com/Gustavo039/fableCount)
+
+```{r gh-installation, eval = FALSE}
+# requires("devtools")
+remotes::install_github("Gustavo039/fableCount")
+```
+
+
+```{r, echo=F, message=FALSE}
+library(fpp3)
+library(fableCount)
+devtools::load_all()
+```
+
+
+## Count Time Series
+
+A count time series is a sequence of observations that record the number of events occurring at discrete time intervals. These events can be anything that can be counted, such as the number of daily sales, the number of calls received per hour, or the number of cases of a disease per week.
+
+## INGARCH and GLARMA usage
+
+The package has 2 main functions.
+
+* INGARCH - (Integer Generalized Autoregressive Conditional Heteroskedasticity)
+
+* GLARMA - (Generalized Linear Autoregressive Moving Averages)
+
+The usage of the model functions follows the **fable** and **fabletools** pattern
+
+```{r, eval = F}
+dataset |>
+  fabletools::model(
+    model_name1 = INGARCH(response_variable ~ pq(AR_oder, MA_order)),
+    model_name2 = GLARMA(response_variable ~ pq(AR_oder, MA_order))
+    )
+```
+
+
+If the *pq()* is ommited, the automatic parameter selection algorithm is triggered. Such algorithms are based on searching for the model that presents the lowest AIC or BIC
+
+## Example - Influeza in Germany
+
+The following dataset was taken from the `tscount` package and gives the weekly number of reported influenza cases in the state of North Rhine-Westphalia (Germany) from January 2001 to May 2013.
+
+(The cleaned tsibble object can be obtained via fableCount::influenza_rhine)
+
+```{r, echo = F}
+influenza_rhine = tscount::influenza |>
+  mutate(year_week = tsibble::make_yearweek(year = year,
+                                            week = week)) |>
+  relocate(year_week, .before = year) |>
+  select(1,4) |>
+  as_tsibble(index = year_week)
+```
+
+```{r, message=F, warning=F}
+influenza_rhine |>
+  autoplot() +
+  labs(title = "Influenza Cases in Rhine-Westphalia, Germany",
+       y="Number of Cases") +
+  theme_minimal()
+```
+
+
+
+```{r, echo = F}
+model_influenza = influenza_rhine |>
+  model(ing = INGARCH(cases ~ pq(2,0)),
+        gla = GLARMA(cases ~ pq(1,0), method = 'NR'))
+```
+
+
+For models estimation, the automatic parameter selection method was used
+
+```{r, eval = F}
+model_influenza = influenza_rhine |>
+  model(ing = INGARCH(cases),
+        gla = GLARMA(cases, method = 'NR'))
+```
+
+The estimated models were:
+
+* INGARCH
+
+```{r}
+model_influenza |> 
+  select(ing) |>
+  report()
+```
+
+
+* GLARMA
+
+```{r}
+model_influenza |> 
+  select(gla) |>
+  report()
+```
+
+
+With the models already estimated, it is possible to draw a prediction interval
+
+* INGARCH forecast
+
+```{r}
+model_influenza |> 
+  dplyr::select(ing) |>
+  forecast(h = 5) |>
+  autoplot(influenza_rhine |>
+             dplyr::filter(year_week > tsibble::make_yearweek(2013, 5) )
+           )
+```
+
+
+
+* GLARMA forecast
+
+```{r}
+model_influenza |> 
+  dplyr::select(gla) |>
+  forecast(h = 5) |>
+  autoplot(influenza_rhine |>
+             dplyr::filter(year_week > tsibble::make_yearweek(2013, 5) )
+           )
+```
+
+
+## Learning to forecast with fable
+
+- The forecasting principles and practices online textbook provides an introduction to time series forecasting using fable: https://otexts.com/fpp3/

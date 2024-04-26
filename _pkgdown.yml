@@ -2,3 +2,27 @@ url: https://gustavo039.github.io/fableCount/
 template:
   bootstrap: 5
 
+authors:
+  Gustavo Almeida:
+    href: https://gustavo039.github.io/
+  JFSalvando Todos - Plataforma de Análises Estatísticas:
+    href: http://jfsalvandotodos.ufjf.br/
+
+
+navbar:
+  type: default
+  left:
+  - text: Reference
+    href: reference/index.html
+
+reference:
+- title: INGARCH
+  desc: >
+    The INGARCH model and its supported methods.
+  contents:
+    - ends_with("INGARCH")
+- title: GLARMA
+  desc: >
+    The GLARMA model and its supported methods.
+  contents:
+    - ends_with("GLARMA")

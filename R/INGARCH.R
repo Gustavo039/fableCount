@@ -105,11 +105,11 @@ ingarch_tscall = function(x, p = 0, q = 0, P = 0, Q = 0,
                    trace = trace, ic  = 'AIC', link = 'identity',
                    distr = 'poisson', xreg = NULL)
   }
-  params = clean_params(params)
+  params_model = clean_params(params)
   tscount_model = tscount::tsglm(x,
                                  model =
-                                   list(past_obs = params[[1]],
-                                        past_mean = params[[2]]),
+                                   list(past_obs = params_model[[1]],
+                                        past_mean = params_model[[2]]),
                                  link = link,
                                  distr = distr,
                                  xreg = xreg[[1]]$xreg

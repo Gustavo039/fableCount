@@ -2,6 +2,8 @@ globalVariables(c("p", "q","P", "Q"))
 
 
 
+auto_dist = function(){}
+
 naive_search = function(x, p = 0, q = 0, P = 0, Q = 0,
                         trace = T,
                         ic  = 'AIC', link = 'identity', distr = 'poisson', xreg = NULL){
